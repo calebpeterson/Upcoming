@@ -29,8 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 if granted {
                     print("Calendar access granted")
-                    self.updateMenu()
-                    self.updateStatusItemTitle()
+                    self.refreshData()
                     self.startUpdateTimer()
                 } else {
                     print("Calendar access denied: \(error?.localizedDescription ?? "unknown error")")
@@ -41,17 +40,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func startUpdateTimer() {
-        // Update every minute
+        // Re-query events and update every minute
         updateTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
-            self?.updateStatusItemTitle()
-            self?.updateMenu()
+            print("Refreshing calendar data...")
+            self?.refreshData()
         }
     }
     
-    func updateStatusItemTitle() {
+    func refreshData() {
+        // Fetch events once and use for both title and menu
+        let events = fetchTodayEvents()
+        updateStatusItemTitle(with: events)
+        updateMenu(with: events)
+    }
+    
+    func updateStatusItemTitle(with events: [EKEvent]) {
         guard let button = statusItem.button else { return }
         
-        let nextEvent = findNextUpcomingEvent()
+        let nextEvent = findNextUpcomingEvent(from: events)
         
         if let event = nextEvent {
             let timeFormatter = DateFormatter()
@@ -63,9 +69,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    func findNextUpcomingEvent() -> EKEvent? {
+    func findNextUpcomingEvent(from events: [EKEvent]) -> EKEvent? {
         let now = Date()
-        let events = fetchTodayEvents()
         
         // Find the first event that hasn't started yet or is currently happening
         return events.first { event in
@@ -73,11 +78,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    func updateMenu() {
+    func updateMenu(with events: [EKEvent]) {
         let menu = NSMenu()
-        
-        // Get today's events
-        let events = fetchTodayEvents()
         
         if events.isEmpty {
             let noEventsItem = NSMenuItem(title: "No events today", action: nil, keyEquivalent: "")
@@ -176,7 +178,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         
         let events = eventStore.events(matching: predicate)
-        return events.sorted { $0.startDate < $1.startDate }
+        
+        // Filter out all-day and multi-day events
+        let filteredEvents = events.filter { event in
+            // Skip all-day events
+            if event.isAllDay {
+                return false
+            }
+            
+            // Skip multi-day events (events that span more than one day)
+            let eventDuration = event.endDate.timeIntervalSince(event.startDate)
+            let oneDayInSeconds: TimeInterval = 24 * 60 * 60
+            if eventDuration >= oneDayInSeconds {
+                return false
+            }
+            
+            return true
+        }
+        
+        return filteredEvents.sorted { $0.startDate < $1.startDate }
     }
 
 }
