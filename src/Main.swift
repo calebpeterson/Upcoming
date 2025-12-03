@@ -4,6 +4,7 @@ import EventKit
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     let eventStore = EKEventStore()
+    var updateTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menubar-only app (no Dock icon)
@@ -29,11 +30,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if granted {
                     print("Calendar access granted")
                     self.updateMenu()
+                    self.updateStatusItemTitle()
+                    self.startUpdateTimer()
                 } else {
                     print("Calendar access denied: \(error?.localizedDescription ?? "unknown error")")
                     self.showAccessDeniedMenu()
                 }
             }
+        }
+    }
+    
+    func startUpdateTimer() {
+        // Update every minute
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+            self?.updateStatusItemTitle()
+            self?.updateMenu()
+        }
+    }
+    
+    func updateStatusItemTitle() {
+        guard let button = statusItem.button else { return }
+        
+        let nextEvent = findNextUpcomingEvent()
+        
+        if let event = nextEvent {
+            let timeFormatter = DateFormatter()
+            timeFormatter.timeStyle = .short
+            let startTime = timeFormatter.string(from: event.startDate)
+            button.title = "\(startTime) - \(event.title ?? "Untitled")"
+        } else {
+            button.title = "No upcoming events"
+        }
+    }
+    
+    func findNextUpcomingEvent() -> EKEvent? {
+        let now = Date()
+        let events = fetchTodayEvents()
+        
+        // Find the first event that hasn't started yet or is currently happening
+        return events.first { event in
+            event.endDate > now
         }
     }
     
