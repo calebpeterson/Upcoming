@@ -14,7 +14,7 @@ all: $(EXECUTABLE)
 $(EXECUTABLE): $(SOURCE) $(INFO_PLIST)
 	@echo "Building $(APP_NAME).app..."
 	@mkdir -p $(MACOS_DIR)
-	@swiftc $(SOURCE) -o $(EXECUTABLE)
+	@swiftc $(SOURCE) -framework EventKit -o $(EXECUTABLE)
 	@echo "Copying Info.plist..."
 	@cp $(INFO_PLIST) $(CONTENTS_DIR)/Info.plist
 	@echo "Build complete: $(APP_BUNDLE)"
