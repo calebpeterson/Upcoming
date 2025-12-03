@@ -56,7 +56,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let title = "\(startTime) - \(event.title ?? "Untitled")"
                 
                 let eventItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                eventItem.isEnabled = false
+                
+                // Check if event has a URL in its notes/description
+                if let url = extractURL(from: event) {
+                    eventItem.representedObject = url
+                    eventItem.action = #selector(openEventURL(_:))
+                    eventItem.target = self
+                    eventItem.isEnabled = true
+                } else {
+                    eventItem.isEnabled = false
+                }
+                
                 menu.addItem(eventItem)
             }
         }
@@ -71,6 +81,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         
         statusItem.menu = menu
+    }
+    
+    func extractURL(from event: EKEvent) -> URL? {
+        // Check event URL first
+        if let url = event.url {
+            return url
+        }
+        
+        // Check notes for URLs
+        guard let notes = event.notes else { return nil }
+        
+        // Use NSDataDetector to find URLs in the text
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let matches = detector?.matches(in: notes, options: [], range: NSRange(location: 0, length: notes.utf16.count))
+        
+        if let match = matches?.first, let range = Range(match.range, in: notes) {
+            let urlString = String(notes[range])
+            return URL(string: urlString)
+        }
+        
+        return nil
+    }
+    
+    @objc func openEventURL(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.open(url)
     }
     
     func showAccessDeniedMenu() {
