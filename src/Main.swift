@@ -113,11 +113,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func checkForUpcomingEventsAndNotify(events: [EKEvent]) {
         let now = Date()
-        let fiveMinutesFromNow = now.addingTimeInterval(5 * 60)
+        let twoMinutesFromNow = now.addingTimeInterval(2 * 60)
         
         for event in events {
-            // Check if event is starting within 5 minutes and hasn't started yet
-            if event.startDate > now && event.startDate <= fiveMinutesFromNow {
+            // Check if event is starting within 2 minutes and hasn't started yet
+            if event.startDate > now && event.startDate <= twoMinutesFromNow {
                 // Check if we've already notified about this event
                 if !notifiedEventIds.contains(event.eventIdentifier) {
                     sendNotification(for: event)
