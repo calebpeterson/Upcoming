@@ -171,7 +171,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Create popup window
         let popupWidth: CGFloat = 320
-        let popupHeight: CGFloat = 90
+        let popupHeight: CGFloat = 110
         let popupOrigin = NSPoint(
             x: buttonFrame.midX - popupWidth / 2,
             y: buttonFrame.minY - popupHeight - 10
@@ -240,32 +240,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Add buttons - Join button if URL exists, otherwise just Dismiss
         if url != nil {
-            // Join button
-            let joinButton = NSButton(frame: NSRect(x: popupWidth - 140, y: 10, width: 50, height: 18))
-            joinButton.title = "Join"
-            joinButton.bezelStyle = .rounded
-            joinButton.controlSize = .small
-            joinButton.font = .systemFont(ofSize: 11)
-            joinButton.target = self
-            joinButton.action = #selector(joinEvent)
-            contentView.addSubview(joinButton)
-            
             // Dismiss button
-            let dismissButton = NSButton(frame: NSRect(x: popupWidth - 82, y: 10, width: 70, height: 18))
+            let dismissButton = NSButton(frame: NSRect(x: popupWidth - 167, y: 10, width: 75, height: 32))
             dismissButton.title = "Dismiss"
             dismissButton.bezelStyle = .rounded
-            dismissButton.controlSize = .small
-            dismissButton.font = .systemFont(ofSize: 11)
+            dismissButton.controlSize = .large
+            dismissButton.font = .systemFont(ofSize: 13)
             dismissButton.target = self
             dismissButton.action = #selector(dismissPopup)
             contentView.addSubview(dismissButton)
+            
+            // Join button (primary)
+            let joinButton = NSButton(frame: NSRect(x: popupWidth - 88, y: 10, width: 75, height: 32))
+            joinButton.title = "Join"
+            joinButton.bezelStyle = .rounded
+            joinButton.controlSize = .large
+            joinButton.font = .systemFont(ofSize: 13)
+            joinButton.keyEquivalent = "\r"
+            joinButton.bezelColor = .controlAccentColor
+            joinButton.contentTintColor = .white
+            joinButton.target = self
+            joinButton.action = #selector(joinEvent)
+            contentView.addSubview(joinButton)
         } else {
             // Just Dismiss button
-            let dismissButton = NSButton(frame: NSRect(x: popupWidth - 82, y: 10, width: 70, height: 18))
+            let dismissButton = NSButton(frame: NSRect(x: popupWidth - 88, y: 10, width: 75, height: 32))
             dismissButton.title = "Dismiss"
             dismissButton.bezelStyle = .rounded
-            dismissButton.controlSize = .small
-            dismissButton.font = .systemFont(ofSize: 11)
+            dismissButton.controlSize = .large
+            dismissButton.font = .systemFont(ofSize: 13)
             dismissButton.target = self
             dismissButton.action = #selector(dismissPopup)
             contentView.addSubview(dismissButton)
