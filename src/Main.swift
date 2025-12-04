@@ -1,11 +1,14 @@
 import Cocoa
 import EventKit
 import ServiceManagement
+import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     let eventStore = EKEventStore()
     var updateTimer: Timer?
+    var notifiedEventIds = Set<String>()
+    var introPopup: NSPanel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menubar-only app (no Dock icon)
@@ -21,8 +24,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.title = " Upcoming"
         }
         
+        // Request notification permissions
+        requestNotificationPermissions()
+        
+        // Show intro popup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.showIntroPopup()
+        }
+        
         // Request calendar access and build menu
         requestCalendarAccess()
+    }
+    
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // Don't quit when popup windows close - we're a menubar app
+        return false
+    }
+    
+    func requestNotificationPermissions() {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if granted {
+                print("Notification permission granted")
+            } else {
+                print("Notification permission denied: \(error?.localizedDescription ?? "unknown error")")
+            }
+        }
     }
     
     func requestCalendarAccess() {
@@ -53,6 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let events = fetchTodayEvents()
         updateStatusItemTitle(with: events)
         updateMenu(with: events)
+        checkForUpcomingEventsAndNotify(events: events)
     }
     
     func updateStatusItemTitle(with events: [EKEvent]) {
@@ -88,6 +116,168 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return events.first { event in
             event.endDate > now
         }
+    }
+    
+    func checkForUpcomingEventsAndNotify(events: [EKEvent]) {
+        let now = Date()
+        let fiveMinutesFromNow = now.addingTimeInterval(5 * 60)
+        
+        for event in events {
+            // Check if event is starting within 5 minutes and hasn't started yet
+            if event.startDate > now && event.startDate <= fiveMinutesFromNow {
+                // Check if we've already notified about this event
+                if !notifiedEventIds.contains(event.eventIdentifier) {
+                    sendNotification(for: event)
+                    notifiedEventIds.insert(event.eventIdentifier)
+                }
+            }
+            
+            // Clean up old notified event IDs for events that have already passed
+            if event.endDate < now {
+                notifiedEventIds.remove(event.eventIdentifier)
+            }
+        }
+    }
+    
+    func sendNotification(for event: EKEvent) {
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        let startTime = timeFormatter.string(from: event.startDate)
+        
+        let minutesUntilStart = Int(event.startDate.timeIntervalSinceNow / 60)
+        let eventTitle = event.title ?? "Untitled"
+        let messageBody = "\(eventTitle) starts at \(startTime) (\(minutesUntilStart) minutes)"
+        
+        // Send system notification
+        let content = UNMutableNotificationContent()
+        content.title = "Upcoming Event"
+        content.body = messageBody
+        content.sound = .default
+        
+        let request = UNNotificationRequest(identifier: event.eventIdentifier, content: content, trigger: nil)
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to send notification: \(error.localizedDescription)")
+            } else {
+                print("Notification sent for event: \(eventTitle)")
+            }
+        }
+        
+        // Show popup
+        showPopup(
+            title: "Upcoming Event",
+            message: "\(eventTitle)\nStarts at \(startTime) (\(minutesUntilStart) minutes)"
+        )
+    }
+    
+    func showPopup(title: String, message: String) {
+        guard let button = statusItem.button else { return }
+        
+        // Close any existing popup
+        introPopup?.close()
+        
+        // Calculate position below the menubar item
+        let buttonFrame = button.window?.convertToScreen(button.frame) ?? .zero
+        
+        // Create popup window
+        let popupWidth: CGFloat = 320
+        let popupHeight: CGFloat = 90
+        let popupOrigin = NSPoint(
+            x: buttonFrame.midX - popupWidth / 2,
+            y: buttonFrame.minY - popupHeight - 10
+        )
+        
+        let popupRect = NSRect(x: popupOrigin.x, y: popupOrigin.y, width: popupWidth, height: popupHeight)
+        
+        let popup = NSPanel(
+            contentRect: popupRect,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        
+        popup.isOpaque = false
+        popup.backgroundColor = .clear
+        popup.hasShadow = true
+        popup.level = .floating
+        popup.hidesOnDeactivate = false
+        popup.becomesKeyOnlyIfNeeded = true
+        
+        // Create content view
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: popupWidth, height: popupHeight))
+        contentView.wantsLayer = true
+        
+        // Background with proper blur and vibrancy effect
+        let visualEffect = NSVisualEffectView(frame: contentView.bounds)
+        visualEffect.material = .popover
+        visualEffect.state = .active
+        visualEffect.blendingMode = .behindWindow
+        visualEffect.wantsLayer = true
+        visualEffect.layer?.cornerRadius = 10
+        contentView.addSubview(visualEffect)
+        
+        // Add subtle shadow
+        contentView.layer?.shadowColor = NSColor.black.cgColor
+        contentView.layer?.shadowOpacity = 0.15
+        contentView.layer?.shadowOffset = NSSize(width: 0, height: -2)
+        contentView.layer?.shadowRadius = 8
+        
+        // Title label
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        titleLabel.textColor = .labelColor
+        titleLabel.frame = NSRect(x: 12, y: popupHeight - 28, width: popupWidth - 24, height: 16)
+        titleLabel.isBezeled = false
+        titleLabel.drawsBackground = false
+        titleLabel.isEditable = false
+        titleLabel.isSelectable = false
+        contentView.addSubview(titleLabel)
+        
+        // Message label
+        let messageLabel = NSTextField(labelWithString: message.replacingOccurrences(of: "\n", with: " "))
+        messageLabel.font = .systemFont(ofSize: 11)
+        messageLabel.textColor = .secondaryLabelColor
+        messageLabel.frame = NSRect(x: 12, y: 32, width: popupWidth - 24, height: 28)
+        messageLabel.isBezeled = false
+        messageLabel.drawsBackground = false
+        messageLabel.isEditable = false
+        messageLabel.isSelectable = false
+        messageLabel.maximumNumberOfLines = 2
+        messageLabel.lineBreakMode = .byTruncatingTail
+        messageLabel.cell?.wraps = true
+        messageLabel.cell?.isScrollable = false
+        contentView.addSubview(messageLabel)
+        
+        // Dismiss button in lower-right
+        let dismissButton = NSButton(frame: NSRect(x: popupWidth - 82, y: 10, width: 70, height: 18))
+        dismissButton.title = "Dismiss"
+        dismissButton.bezelStyle = .rounded
+        dismissButton.controlSize = .small
+        dismissButton.font = .systemFont(ofSize: 11)
+        dismissButton.target = self
+        dismissButton.action = #selector(dismissPopup)
+        contentView.addSubview(dismissButton)
+        
+        popup.contentView = contentView
+        
+        // Store popup reference
+        introPopup = popup
+        
+        // Show popup without activating
+        popup.orderFrontRegardless()
+    }
+    
+    func showIntroPopup() {
+        showPopup(
+            title: "Upcoming",
+            message: "Welcome! Upcoming is now monitoring\nyour calendar events."
+        )
+    }
+    
+    @objc func dismissPopup() {
+        introPopup?.close()
+        introPopup = nil
     }
     
     func updateMenu(with events: [EKEvent]) {

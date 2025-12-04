@@ -21,4 +21,3 @@ make run
 - Clickable events with URLs
 - Updates every minute
 - Filters out all-day and multi-day events
-
