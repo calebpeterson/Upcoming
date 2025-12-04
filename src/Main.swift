@@ -1,5 +1,6 @@
 import Cocoa
 import EventKit
+import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
@@ -130,6 +131,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         refreshItem.target = self
         menu.addItem(refreshItem)
         
+        let loginItem = NSMenuItem(
+            title: "Open at Login",
+            action: #selector(toggleLoginItem(_:)),
+            keyEquivalent: ""
+        )
+        loginItem.target = self
+        loginItem.state = isLoginItemEnabled() ? .on : .off
+        menu.addItem(loginItem)
+        
         menu.addItem(NSMenuItem.separator())
         
         menu.addItem(
@@ -172,6 +182,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func manualRefresh(_ sender: NSMenuItem) {
         print("Manual refresh triggered")
         refreshData()
+    }
+    
+    func isLoginItemEnabled() -> Bool {
+        if #available(macOS 13.0, *) {
+            return SMAppService.mainApp.status == .enabled
+        }
+        return false
+    }
+    
+    @objc func toggleLoginItem(_ sender: NSMenuItem) {
+        if #available(macOS 13.0, *) {
+            let service = SMAppService.mainApp
+            
+            do {
+                if service.status == .enabled {
+                    try service.unregister()
+                    print("Login item disabled")
+                } else {
+                    try service.register()
+                    print("Login item enabled")
+                }
+                // Refresh menu to update checkmark
+                refreshData()
+            } catch {
+                print("Failed to toggle login item: \(error.localizedDescription)")
+            }
+        }
     }
     
     func showAccessDeniedMenu() {
