@@ -110,6 +110,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         menu.addItem(NSMenuItem.separator())
+        
+        let refreshItem = NSMenuItem(
+            title: "Refresh",
+            action: #selector(manualRefresh(_:)),
+            keyEquivalent: "r"
+        )
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
         menu.addItem(
             NSMenuItem(
                 title: "Quit",
@@ -145,6 +156,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openEventURL(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         NSWorkspace.shared.open(url)
+    }
+    
+    @objc func manualRefresh(_ sender: NSMenuItem) {
+        print("Manual refresh triggered")
+        refreshData()
     }
     
     func showAccessDeniedMenu() {
