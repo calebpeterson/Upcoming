@@ -17,7 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let image = NSImage(systemSymbolName: "calendar.badge.clock", accessibilityDescription: "Upcoming") {
                 button.image = image
             }
-            button.title = "Upcoming"
+            button.title = " Upcoming"
         }
         
         // Request calendar access and build menu
@@ -63,9 +63,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let timeFormatter = DateFormatter()
             timeFormatter.timeStyle = .short
             let startTime = timeFormatter.string(from: event.startDate)
-            button.title = "\(startTime) - \(event.title ?? "Untitled")"
+            let now = Date()
+            
+            var title = " \(startTime) - \(event.title ?? "Untitled")"
+            
+            // Check if event is in progress
+            if now >= event.startDate && now < event.endDate {
+                let remainingSeconds = event.endDate.timeIntervalSince(now)
+                let remainingMinutes = Int(ceil(remainingSeconds / 60.0))
+                title += " - \(remainingMinutes)m left"
+            }
+            
+            button.title = title
         } else {
-            button.title = "No upcoming events"
+            button.title = " No upcoming events"
         }
     }
     
