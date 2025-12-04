@@ -8,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var updateTimer: Timer?
     var notifiedEventIds = Set<String>()
     var introPopup: NSPanel?
+    var currentPopupURL: URL?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menubar-only app (no Dock icon)
@@ -140,18 +141,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let minutesUntilStart = Int(event.startDate.timeIntervalSinceNow / 60)
         let eventTitle = event.title ?? "Untitled"
         
+        // Extract URL from event if available
+        let eventURL = extractURL(from: event)
+        
         // Show popup
         showPopup(
             title: "Upcoming Event",
-            message: "\(eventTitle)\nStarts at \(startTime) (\(minutesUntilStart) minutes)"
+            message: "\(eventTitle)\nStarts at \(startTime) (\(minutesUntilStart) minutes)",
+            url: eventURL
         )
     }
     
-    func showPopup(title: String, message: String) {
+    func showPopup(title: String, message: String, url: URL? = nil) {
         guard let button = statusItem.button else { return }
         
         // Close any existing popup
         introPopup?.close()
+        
+        // Store URL for Join button
+        currentPopupURL = url
         
         // Calculate position below the menubar item
         let buttonFrame = button.window?.convertToScreen(button.frame) ?? .zero
@@ -225,15 +233,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         messageLabel.cell?.isScrollable = false
         contentView.addSubview(messageLabel)
         
-        // Dismiss button in lower-right
-        let dismissButton = NSButton(frame: NSRect(x: popupWidth - 82, y: 10, width: 70, height: 18))
-        dismissButton.title = "Dismiss"
-        dismissButton.bezelStyle = .rounded
-        dismissButton.controlSize = .small
-        dismissButton.font = .systemFont(ofSize: 11)
-        dismissButton.target = self
-        dismissButton.action = #selector(dismissPopup)
-        contentView.addSubview(dismissButton)
+        // Add buttons - Join button if URL exists, otherwise just Dismiss
+        if url != nil {
+            // Join button
+            let joinButton = NSButton(frame: NSRect(x: popupWidth - 140, y: 10, width: 50, height: 18))
+            joinButton.title = "Join"
+            joinButton.bezelStyle = .rounded
+            joinButton.controlSize = .small
+            joinButton.font = .systemFont(ofSize: 11)
+            joinButton.target = self
+            joinButton.action = #selector(joinEvent)
+            contentView.addSubview(joinButton)
+            
+            // Dismiss button
+            let dismissButton = NSButton(frame: NSRect(x: popupWidth - 82, y: 10, width: 70, height: 18))
+            dismissButton.title = "Dismiss"
+            dismissButton.bezelStyle = .rounded
+            dismissButton.controlSize = .small
+            dismissButton.font = .systemFont(ofSize: 11)
+            dismissButton.target = self
+            dismissButton.action = #selector(dismissPopup)
+            contentView.addSubview(dismissButton)
+        } else {
+            // Just Dismiss button
+            let dismissButton = NSButton(frame: NSRect(x: popupWidth - 82, y: 10, width: 70, height: 18))
+            dismissButton.title = "Dismiss"
+            dismissButton.bezelStyle = .rounded
+            dismissButton.controlSize = .small
+            dismissButton.font = .systemFont(ofSize: 11)
+            dismissButton.target = self
+            dismissButton.action = #selector(dismissPopup)
+            contentView.addSubview(dismissButton)
+        }
         
         popup.contentView = contentView
         
@@ -254,6 +285,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func dismissPopup() {
         introPopup?.close()
         introPopup = nil
+        currentPopupURL = nil
+    }
+    
+    @objc func joinEvent() {
+        guard let url = currentPopupURL else { return }
+        NSWorkspace.shared.open(url)
+        dismissPopup()
     }
     
     func updateMenu(with events: [EKEvent]) {
