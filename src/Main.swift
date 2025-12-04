@@ -313,8 +313,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 
                 // Check if event has a URL in its notes/description
                 if let url = extractURL(from: event) {
-                    eventItem.representedObject = url
-                    eventItem.action = #selector(openEventURL(_:))
+                    eventItem.representedObject = ["event": event, "url": url]
+                    eventItem.action = #selector(showEventPopup(_:))
                     eventItem.target = self
                     eventItem.isEnabled = true
                 } else {
@@ -358,29 +358,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func extractURL(from event: EKEvent) -> URL? {
-        // Check event URL first
+        var allURLs: [URL] = []
+        
+        // Collect event URL if present
         if let url = event.url {
-            return url
+            allURLs.append(url)
         }
         
-        // Check notes for URLs
-        guard let notes = event.notes else { return nil }
-        
-        // Use NSDataDetector to find URLs in the text
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-        let matches = detector?.matches(in: notes, options: [], range: NSRange(location: 0, length: notes.utf16.count))
-        
-        if let match = matches?.first, let range = Range(match.range, in: notes) {
-            let urlString = String(notes[range])
-            return URL(string: urlString)
+        // Collect URLs from notes
+        if let notes = event.notes {
+            let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+            let matches = detector?.matches(in: notes, options: [], range: NSRange(location: 0, length: notes.utf16.count))
+            
+            for match in matches ?? [] {
+                if let range = Range(match.range, in: notes) {
+                    let urlString = String(notes[range])
+                    if let url = URL(string: urlString) {
+                        allURLs.append(url)
+                    }
+                }
+            }
         }
         
-        return nil
+        // Prefer Zoom URLs
+        if let zoomURL = allURLs.first(where: { $0.absoluteString.contains("zoom.us") }) {
+            return zoomURL
+        }
+        
+        // Otherwise return the first URL found
+        return allURLs.first
     }
     
     @objc func openEventURL(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         NSWorkspace.shared.open(url)
+    }
+    
+    @objc func showEventPopup(_ sender: NSMenuItem) {
+        guard let dict = sender.representedObject as? [String: Any],
+              let event = dict["event"] as? EKEvent,
+              let url = dict["url"] as? URL else { return }
+        
+        let timeFormatter = DateFormatter()
+        timeFormatter.timeStyle = .short
+        let startTime = timeFormatter.string(from: event.startDate)
+        let endTime = timeFormatter.string(from: event.endDate)
+        let eventTitle = event.title ?? "Untitled"
+        
+        showPopup(
+            title: eventTitle,
+            message: "\(startTime) - \(endTime)",
+            url: url
+        )
     }
     
     @objc func manualRefresh(_ sender: NSMenuItem) {
