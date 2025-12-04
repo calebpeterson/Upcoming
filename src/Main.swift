@@ -1,7 +1,6 @@
 import Cocoa
 import EventKit
 import ServiceManagement
-import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
@@ -24,9 +23,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.title = " Upcoming"
         }
         
-        // Request notification permissions
-        requestNotificationPermissions()
-        
         // Show intro popup
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.showIntroPopup()
@@ -39,17 +35,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Don't quit when popup windows close - we're a menubar app
         return false
-    }
-    
-    func requestNotificationPermissions() {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if granted {
-                print("Notification permission granted")
-            } else {
-                print("Notification permission denied: \(error?.localizedDescription ?? "unknown error")")
-            }
-        }
     }
     
     func requestCalendarAccess() {
@@ -102,6 +87,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let remainingMinutes = Int(ceil(remainingSeconds / 60.0))
                 title += " - \(remainingMinutes)m left"
             }
+            // Check if event is upcoming within 30 minutes
+            else if now < event.startDate {
+                let timeUntilStart = event.startDate.timeIntervalSince(now)
+                let minutesUntilStart = Int(ceil(timeUntilStart / 60.0))
+                if minutesUntilStart <= 30 {
+                    title += " - in \(minutesUntilStart) m"
+                }
+            }
             
             button.title = title
         } else {
@@ -146,23 +139,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let minutesUntilStart = Int(event.startDate.timeIntervalSinceNow / 60)
         let eventTitle = event.title ?? "Untitled"
-        let messageBody = "\(eventTitle) starts at \(startTime) (\(minutesUntilStart) minutes)"
-        
-        // Send system notification
-        let content = UNMutableNotificationContent()
-        content.title = "Upcoming Event"
-        content.body = messageBody
-        content.sound = .default
-        
-        let request = UNNotificationRequest(identifier: event.eventIdentifier, content: content, trigger: nil)
-        
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("Failed to send notification: \(error.localizedDescription)")
-            } else {
-                print("Notification sent for event: \(eventTitle)")
-            }
-        }
         
         // Show popup
         showPopup(
