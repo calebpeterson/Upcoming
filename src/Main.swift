@@ -63,10 +63,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func refreshData() {
         // Fetch events once and use for both title and menu
-        let events = fetchTodayEvents()
-        updateStatusItemTitle(with: events)
-        updateMenu(with: events)
-        checkForUpcomingEventsAndNotify(events: events)
+        let allEvents = fetchTodayEvents()
+        let regularEvents = filterRegularEvents(allEvents)
+        
+        // Title and notifications only use regular events
+        updateStatusItemTitle(with: regularEvents)
+        checkForUpcomingEventsAndNotify(events: regularEvents)
+        
+        // Menu shows all events
+        updateMenu(with: allEvents)
     }
     
     func updateStatusItemTitle(with events: [EKEvent]) {
@@ -302,7 +307,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             noEventsItem.isEnabled = false
             menu.addItem(noEventsItem)
         } else {
-            for event in events {
+            let allDayEvents = filterAllDayOrMultiDayEvents(events)
+            let regularEvents = filterRegularEvents(events)
+            
+            // Add all-day/multi-day events first
+            if !allDayEvents.isEmpty {
+                for event in allDayEvents {
+                    let title: String
+                    if event.isAllDay {
+                        title = "All Day - \(event.title ?? "Untitled")"
+                    } else {
+                        title = "Multi-Day - \(event.title ?? "Untitled")"
+                    }
+                    
+                    let eventItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                    
+                    // Check if event has a URL in its notes/description
+                    if let url = extractURL(from: event) {
+                        eventItem.representedObject = ["event": event, "url": url]
+                        eventItem.action = #selector(showEventPopup(_:))
+                        eventItem.target = self
+                        eventItem.isEnabled = true
+                    } else {
+                        eventItem.isEnabled = false
+                    }
+                    
+                    menu.addItem(eventItem)
+                }
+                
+                // Add separator between all-day and regular events
+                if !regularEvents.isEmpty {
+                    menu.addItem(NSMenuItem.separator())
+                }
+            }
+            
+            // Add regular events
+            for event in regularEvents {
                 let timeFormatter = DateFormatter()
                 timeFormatter.timeStyle = .short
                 
@@ -476,24 +516,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         let events = eventStore.events(matching: predicate)
         
-        // Filter out all-day and multi-day events
-        let filteredEvents = events.filter { event in
-            // Skip all-day events
-            if event.isAllDay {
-                return false
-            }
-            
-            // Skip multi-day events (events that span more than one day)
-            let eventDuration = event.endDate.timeIntervalSince(event.startDate)
-            let oneDayInSeconds: TimeInterval = 24 * 60 * 60
-            if eventDuration >= oneDayInSeconds {
-                return false
-            }
-            
+        return events.sorted { $0.startDate < $1.startDate }
+    }
+    
+    func isAllDayOrMultiDayEvent(_ event: EKEvent) -> Bool {
+        if event.isAllDay {
             return true
         }
         
-        return filteredEvents.sorted { $0.startDate < $1.startDate }
+        let eventDuration = event.endDate.timeIntervalSince(event.startDate)
+        let oneDayInSeconds: TimeInterval = 24 * 60 * 60
+        if eventDuration >= oneDayInSeconds {
+            return true
+        }
+        
+        return false
+    }
+    
+    func filterRegularEvents(_ events: [EKEvent]) -> [EKEvent] {
+        return events.filter { !isAllDayOrMultiDayEvent($0) }
+    }
+    
+    func filterAllDayOrMultiDayEvents(_ events: [EKEvent]) -> [EKEvent] {
+        return events.filter { isAllDayOrMultiDayEvent($0) }
     }
 
 }
