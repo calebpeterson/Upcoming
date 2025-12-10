@@ -24,11 +24,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.title = " Upcoming"
         }
         
-        // Show intro popup
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.showIntroPopup()
-        }
-        
         // Request calendar access and build menu
         requestCalendarAccess()
     }
@@ -93,11 +88,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let remainingMinutes = Int(ceil(remainingSeconds / 60.0))
                 title += " - \(remainingMinutes)m left"
             }
-            // Check if event is upcoming within 30 minutes
+            // Check if event is upcoming within 60 minutes
             else if now < event.startDate {
                 let timeUntilStart = event.startDate.timeIntervalSince(now)
                 let minutesUntilStart = Int(ceil(timeUntilStart / 60.0))
-                if minutesUntilStart <= 30 {
+                if minutesUntilStart <= 60 {
                     title += " - in \(minutesUntilStart) m"
                 }
             }
@@ -325,15 +320,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     
                     let eventItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
                     
-                    // Check if event has a URL in its notes/description
-                    if let url = extractURL(from: event) {
-                        eventItem.representedObject = ["event": event, "url": url]
-                        eventItem.action = #selector(showEventPopup(_:))
-                        eventItem.target = self
-                        eventItem.isEnabled = true
-                    } else {
-                        eventItem.isEnabled = false
-                    }
+                    // Store event with optional URL
+                    let url = extractURL(from: event)
+                    eventItem.representedObject = ["event": event, "url": url as Any]
+                    eventItem.action = #selector(showEventPopup(_:))
+                    eventItem.target = self
+                    eventItem.isEnabled = true
                     
                     menu.addItem(eventItem)
                 }
@@ -354,15 +346,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 
                 let eventItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
                 
-                // Check if event has a URL in its notes/description
-                if let url = extractURL(from: event) {
-                    eventItem.representedObject = ["event": event, "url": url]
-                    eventItem.action = #selector(showEventPopup(_:))
-                    eventItem.target = self
-                    eventItem.isEnabled = true
-                } else {
-                    eventItem.isEnabled = false
-                }
+                // Store event with optional URL
+                let url = extractURL(from: event)
+                eventItem.representedObject = ["event": event, "url": url as Any]
+                eventItem.action = #selector(showEventPopup(_:))
+                eventItem.target = self
+                eventItem.isEnabled = true
                 
                 menu.addItem(eventItem)
             }
@@ -439,8 +428,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func showEventPopup(_ sender: NSMenuItem) {
         guard let dict = sender.representedObject as? [String: Any],
-              let event = dict["event"] as? EKEvent,
-              let url = dict["url"] as? URL else { return }
+              let event = dict["event"] as? EKEvent else { return }
+        
+        let url = dict["url"] as? URL
         
         let timeFormatter = DateFormatter()
         timeFormatter.timeStyle = .short
