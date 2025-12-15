@@ -412,6 +412,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         
+        // Collect URLs from location
+        if let location = event.location {
+            let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+            let matches = detector?.matches(in: location, options: [], range: NSRange(location: 0, length: location.utf16.count))
+            
+            for match in matches ?? [] {
+                if let range = Range(match.range, in: location) {
+                    let urlString = String(location[range])
+                    if let url = URL(string: urlString) {
+                        allURLs.append(url)
+                    }
+                }
+            }
+        }
+        
         // Prefer Zoom URLs
         if let zoomURL = allURLs.first(where: { $0.absoluteString.contains("zoom.us") }) {
             return zoomURL
