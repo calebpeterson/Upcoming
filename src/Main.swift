@@ -369,8 +369,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func joinEvent() {
         guard let url = currentPopupURL else { return }
-        NSWorkspace.shared.open(url)
+        
+        // If it's a Zoom URL, convert it to open the Zoom app directly
+        if let zoomURL = convertToZoomAppURL(url) {
+            NSWorkspace.shared.open(zoomURL)
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+        
         dismissPopup()
+    }
+    
+    func convertToZoomAppURL(_ url: URL) -> URL? {
+        let urlString = url.absoluteString
+        
+        // Check if it's a Zoom URL
+        guard urlString.contains("zoom.us") || urlString.contains("zoom.com") else {
+            return nil
+        }
+        
+        // Extract meeting ID from various Zoom URL formats
+        // Examples:
+        // https://zoom.us/j/123456789
+        // https://us02web.zoom.us/j/123456789
+        // https://zoom.us/j/123456789?pwd=password
+        // https://zoom.us/s/123456789
+        
+        let pattern = #"zoom\.(?:us|com)/[js]/(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else {
+            return nil
+        }
+        
+        let range = NSRange(location: 0, length: urlString.utf16.count)
+        guard let match = regex.firstMatch(in: urlString, options: [], range: range),
+              let meetingIDRange = Range(match.range(at: 1), in: urlString) else {
+            return nil
+        }
+        
+        let meetingID = String(urlString[meetingIDRange])
+        
+        // Convert to zoom:// URL scheme to open Zoom app directly
+        if let zoomAppURL = URL(string: "zoommtg://zoom.us/join?confno=\(meetingID)") {
+            return zoomAppURL
+        }
+        
+        return nil
     }
     
     func updateMenu(with events: [EKEvent]) {
