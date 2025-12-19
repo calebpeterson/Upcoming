@@ -164,15 +164,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Calculate position below the menubar item
         let buttonFrame = button.window?.convertToScreen(button.frame) ?? .zero
         
-        // Create popup window
+        // Create popup window with initial size (will be adjusted after layout)
         let popupWidth: CGFloat = 320
-        let popupHeight: CGFloat = 110
+        let initialHeight: CGFloat = 110
         let popupOrigin = NSPoint(
             x: buttonFrame.midX - popupWidth / 2,
-            y: buttonFrame.minY - popupHeight - 10
+            y: buttonFrame.minY - initialHeight - 10
         )
         
-        let popupRect = NSRect(x: popupOrigin.x, y: popupOrigin.y, width: popupWidth, height: popupHeight)
+        let popupRect = NSRect(x: popupOrigin.x, y: popupOrigin.y, width: popupWidth, height: initialHeight)
         
         let popup = NSPanel(
             contentRect: popupRect,
@@ -189,16 +189,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popup.becomesKeyOnlyIfNeeded = true
         
         // Create content view
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: popupWidth, height: popupHeight))
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: popupWidth, height: initialHeight))
         contentView.wantsLayer = true
         
         // Background with proper blur and vibrancy effect
-        let visualEffect = NSVisualEffectView(frame: contentView.bounds)
+        let visualEffect = NSVisualEffectView()
         visualEffect.material = .popover
         visualEffect.state = .active
         visualEffect.blendingMode = .behindWindow
         visualEffect.wantsLayer = true
         visualEffect.layer?.cornerRadius = 10
+        visualEffect.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(visualEffect)
         
         // Add subtle shadow
@@ -207,69 +208,144 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         contentView.layer?.shadowOffset = NSSize(width: 0, height: -2)
         contentView.layer?.shadowRadius = 8
         
-        // Title label
+        // Title label - allow wrapping
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
         titleLabel.textColor = .labelColor
-        titleLabel.frame = NSRect(x: 12, y: popupHeight - 28, width: popupWidth - 24, height: 16)
         titleLabel.isBezeled = false
         titleLabel.drawsBackground = false
         titleLabel.isEditable = false
         titleLabel.isSelectable = false
+        titleLabel.lineBreakMode = .byWordWrapping
+        titleLabel.cell?.wraps = true
+        titleLabel.cell?.isScrollable = false
+        titleLabel.preferredMaxLayoutWidth = popupWidth - 24
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .vertical)
+        titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(titleLabel)
         
-        // Message label
-        let messageLabel = NSTextField(labelWithString: message.replacingOccurrences(of: "\n", with: " "))
+        // Message label - allow flexible height and wrapping
+        let messageLabel = NSTextField(labelWithString: message)
         messageLabel.font = .systemFont(ofSize: 11)
         messageLabel.textColor = .secondaryLabelColor
-        messageLabel.frame = NSRect(x: 12, y: 32, width: popupWidth - 24, height: 28)
         messageLabel.isBezeled = false
         messageLabel.drawsBackground = false
         messageLabel.isEditable = false
         messageLabel.isSelectable = false
-        messageLabel.maximumNumberOfLines = 2
-        messageLabel.lineBreakMode = .byTruncatingTail
+        messageLabel.lineBreakMode = .byWordWrapping
         messageLabel.cell?.wraps = true
         messageLabel.cell?.isScrollable = false
+        messageLabel.preferredMaxLayoutWidth = popupWidth - 24
+        messageLabel.setContentHuggingPriority(.defaultLow, for: .vertical)
+        messageLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        messageLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(messageLabel)
         
+        // Create button container for flexbox-like layout
+        let buttonContainer = NSView()
+        buttonContainer.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(buttonContainer)
+        
         // Add buttons - Join button if URL exists, otherwise just Dismiss
+        let dismissButton = NSButton()
+        dismissButton.title = "Dismiss"
+        dismissButton.bezelStyle = .rounded
+        dismissButton.controlSize = .large
+        dismissButton.font = .systemFont(ofSize: 13)
+        dismissButton.target = self
+        dismissButton.action = #selector(dismissPopup)
+        dismissButton.translatesAutoresizingMaskIntoConstraints = false
+        buttonContainer.addSubview(dismissButton)
+        
+        var joinButton: NSButton?
         if url != nil {
-            // Dismiss button
-            let dismissButton = NSButton(frame: NSRect(x: popupWidth - 167, y: 10, width: 75, height: 32))
-            dismissButton.title = "Dismiss"
-            dismissButton.bezelStyle = .rounded
-            dismissButton.controlSize = .large
-            dismissButton.font = .systemFont(ofSize: 13)
-            dismissButton.target = self
-            dismissButton.action = #selector(dismissPopup)
-            contentView.addSubview(dismissButton)
+            joinButton = NSButton()
+            joinButton!.title = "Join"
+            joinButton!.bezelStyle = .rounded
+            joinButton!.controlSize = .large
+            joinButton!.font = .systemFont(ofSize: 13)
+            joinButton!.keyEquivalent = "\r"
+            joinButton!.bezelColor = .controlAccentColor
+            joinButton!.contentTintColor = .white
+            joinButton!.target = self
+            joinButton!.action = #selector(joinEvent)
+            joinButton!.translatesAutoresizingMaskIntoConstraints = false
+            buttonContainer.addSubview(joinButton!)
+        }
+        
+        // Set up Auto Layout constraints
+        NSLayoutConstraint.activate([
+            // Visual effect view fills content view
+            visualEffect.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            visualEffect.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            visualEffect.topAnchor.constraint(equalTo: contentView.topAnchor),
+            visualEffect.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             
-            // Join button (primary)
-            let joinButton = NSButton(frame: NSRect(x: popupWidth - 88, y: 10, width: 75, height: 32))
-            joinButton.title = "Join"
-            joinButton.bezelStyle = .rounded
-            joinButton.controlSize = .large
-            joinButton.font = .systemFont(ofSize: 13)
-            joinButton.keyEquivalent = "\r"
-            joinButton.bezelColor = .controlAccentColor
-            joinButton.contentTintColor = .white
-            joinButton.target = self
-            joinButton.action = #selector(joinEvent)
-            contentView.addSubview(joinButton)
+            // Title label - top padding, leading/trailing padding
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            
+            // Message label - below title with spacing, flexible height
+            messageLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            messageLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            messageLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            
+            // Button container - at bottom with padding
+            buttonContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            buttonContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            buttonContainer.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
+            buttonContainer.heightAnchor.constraint(equalToConstant: 32),
+            
+            // Message label spacing above button container
+            messageLabel.bottomAnchor.constraint(lessThanOrEqualTo: buttonContainer.topAnchor, constant: -12),
+        ])
+        
+        // Button constraints
+        if let joinButton = joinButton {
+            NSLayoutConstraint.activate([
+                // Join button - trailing edge
+                joinButton.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor, constant: -12),
+                joinButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
+                joinButton.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
+                joinButton.widthAnchor.constraint(equalToConstant: 75),
+                
+                // Dismiss button - before join button
+                dismissButton.trailingAnchor.constraint(equalTo: joinButton.leadingAnchor, constant: -8),
+                dismissButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
+                dismissButton.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
+                dismissButton.widthAnchor.constraint(equalToConstant: 75),
+            ])
         } else {
-            // Just Dismiss button
-            let dismissButton = NSButton(frame: NSRect(x: popupWidth - 88, y: 10, width: 75, height: 32))
-            dismissButton.title = "Dismiss"
-            dismissButton.bezelStyle = .rounded
-            dismissButton.controlSize = .large
-            dismissButton.font = .systemFont(ofSize: 13)
-            dismissButton.target = self
-            dismissButton.action = #selector(dismissPopup)
-            contentView.addSubview(dismissButton)
+            NSLayoutConstraint.activate([
+                // Dismiss button - trailing edge
+                dismissButton.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor, constant: -12),
+                dismissButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
+                dismissButton.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
+                dismissButton.widthAnchor.constraint(equalToConstant: 75),
+            ])
         }
         
         popup.contentView = contentView
+        
+        // Set up width constraint for proper height calculation
+        contentView.widthAnchor.constraint(equalToConstant: popupWidth).isActive = true
+        
+        // Force layout to calculate actual size
+        contentView.needsLayout = true
+        contentView.layoutSubtreeIfNeeded()
+        
+        // Calculate actual height needed using Auto Layout fitting size
+        let fittingSize = contentView.fittingSize
+        let actualHeight = max(fittingSize.height, initialHeight)
+        
+        // Update popup size and position
+        let updatedOrigin = NSPoint(
+            x: buttonFrame.midX - popupWidth / 2,
+            y: buttonFrame.minY - actualHeight - 10
+        )
+        popup.setFrame(NSRect(x: updatedOrigin.x, y: updatedOrigin.y, width: popupWidth, height: actualHeight), display: true)
         
         // Store popup reference
         introPopup = popup
