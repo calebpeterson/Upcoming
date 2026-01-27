@@ -69,6 +69,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenu(with: allEvents)
     }
     
+    func formatTimeRemaining(minutes: Int) -> String {
+        if minutes > 90 {
+            let hours = minutes / 60
+            let mins = minutes % 60
+            return String(format: "%d:%02d", hours, mins)
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
     func updateStatusItemTitle(with events: [EKEvent]) {
         guard let button = statusItem.button else { return }
         
@@ -86,14 +96,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if now >= event.startDate && now < event.endDate {
                 let remainingSeconds = event.endDate.timeIntervalSince(now)
                 let remainingMinutes = Int(ceil(remainingSeconds / 60.0))
-                title += " - \(remainingMinutes)m left"
+                let formattedTime = formatTimeRemaining(minutes: remainingMinutes)
+                title += " - \(formattedTime) left"
             }
             // Check if event is upcoming within 60 minutes
             else if now < event.startDate {
                 let timeUntilStart = event.startDate.timeIntervalSince(now)
                 let minutesUntilStart = Int(ceil(timeUntilStart / 60.0))
                 if minutesUntilStart <= 60 {
-                    title += " - in \(minutesUntilStart) m"
+                    let formattedTime = formatTimeRemaining(minutes: minutesUntilStart)
+                    title += " - in \(formattedTime)"
                 }
             }
             
