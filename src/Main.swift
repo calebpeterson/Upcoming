@@ -9,6 +9,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var notifiedEventIds = Set<String>()
     var introPopup: NSPanel?
     var currentPopupURL: URL?
+    var currentPopupStartDate: Date?
+    var dismissButton: NSButton?
+    var autoJoinButton: NSButton?
+    var autoJoinCountdownTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menubar-only app (no Dock icon)
@@ -160,18 +164,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         showPopup(
             title: "Upcoming Event",
             message: "\(eventTitle)\nStarts at \(startTime) (\(minutesUntilStart) minutes)",
-            url: eventURL
+            url: eventURL,
+            startDate: event.startDate
         )
     }
     
-    func showPopup(title: String, message: String, url: URL? = nil) {
+    func showPopup(title: String, message: String, url: URL? = nil, startDate: Date? = nil) {
         guard let button = statusItem.button else { return }
         
         // Close any existing popup
         introPopup?.close()
         
-        // Store URL for Join button
+        // Store URL and start date for Auto-join button
         currentPopupURL = url
+        currentPopupStartDate = startDate
         
         // Calculate position below the menubar item
         let buttonFrame = button.window?.convertToScreen(button.frame) ?? .zero
@@ -259,31 +265,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         buttonContainer.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(buttonContainer)
         
-        // Add buttons - Join button if URL exists, otherwise just Dismiss
-        let dismissButton = NSButton()
-        dismissButton.title = "Dismiss"
-        dismissButton.bezelStyle = .rounded
-        dismissButton.controlSize = .large
-        dismissButton.font = .systemFont(ofSize: 13)
-        dismissButton.target = self
-        dismissButton.action = #selector(dismissPopup)
-        dismissButton.translatesAutoresizingMaskIntoConstraints = false
-        buttonContainer.addSubview(dismissButton)
+        // Add buttons - Auto-join button if URL exists, otherwise just Dismiss
+        let dismissBtn = NSButton()
+        dismissBtn.title = "Dismiss"
+        dismissBtn.bezelStyle = .rounded
+        dismissBtn.controlSize = .large
+        dismissBtn.font = .systemFont(ofSize: 13)
+        dismissBtn.target = self
+        dismissBtn.action = #selector(dismissPopup)
+        dismissBtn.translatesAutoresizingMaskIntoConstraints = false
+        buttonContainer.addSubview(dismissBtn)
+        self.dismissButton = dismissBtn
         
-        var joinButton: NSButton?
-        if url != nil {
-            joinButton = NSButton()
-            joinButton!.title = "Join"
-            joinButton!.bezelStyle = .rounded
-            joinButton!.controlSize = .large
-            joinButton!.font = .systemFont(ofSize: 13)
-            joinButton!.keyEquivalent = "\r"
-            joinButton!.bezelColor = .controlAccentColor
-            joinButton!.contentTintColor = .white
-            joinButton!.target = self
-            joinButton!.action = #selector(joinEvent)
-            joinButton!.translatesAutoresizingMaskIntoConstraints = false
-            buttonContainer.addSubview(joinButton!)
+        if url != nil && startDate != nil {
+            let button = NSButton()
+            button.title = "Auto-join"
+            button.bezelStyle = .rounded
+            button.controlSize = .large
+            button.font = .systemFont(ofSize: 13)
+            button.keyEquivalent = "\r"
+            button.bezelColor = .controlAccentColor
+            button.contentTintColor = .white
+            button.target = self
+            button.action = #selector(scheduleAutoJoin)
+            button.translatesAutoresizingMaskIntoConstraints = false
+            buttonContainer.addSubview(button)
+            self.autoJoinButton = button
         }
         
         // Set up Auto Layout constraints
@@ -315,27 +322,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ])
         
         // Button constraints
-        if let joinButton = joinButton {
+        if let autoJoinBtn = self.autoJoinButton {
             NSLayoutConstraint.activate([
-                // Join button - trailing edge
-                joinButton.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor, constant: -12),
-                joinButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
-                joinButton.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
-                joinButton.widthAnchor.constraint(equalToConstant: 75),
+                // Auto-join button - trailing edge (wide enough for countdown text)
+                autoJoinBtn.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor, constant: -12),
+                autoJoinBtn.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
+                autoJoinBtn.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
+                autoJoinBtn.widthAnchor.constraint(equalToConstant: 160),
                 
-                // Dismiss button - before join button
-                dismissButton.trailingAnchor.constraint(equalTo: joinButton.leadingAnchor, constant: -8),
-                dismissButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
-                dismissButton.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
-                dismissButton.widthAnchor.constraint(equalToConstant: 75),
+                // Dismiss button - before auto-join button
+                dismissBtn.trailingAnchor.constraint(equalTo: autoJoinBtn.leadingAnchor, constant: -8),
+                dismissBtn.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
+                dismissBtn.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
+                dismissBtn.widthAnchor.constraint(equalToConstant: 75),
             ])
         } else {
             NSLayoutConstraint.activate([
                 // Dismiss button - trailing edge
-                dismissButton.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor, constant: -12),
-                dismissButton.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
-                dismissButton.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
-                dismissButton.widthAnchor.constraint(equalToConstant: 75),
+                dismissBtn.trailingAnchor.constraint(equalTo: buttonContainer.trailingAnchor, constant: -12),
+                dismissBtn.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
+                dismissBtn.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
+                dismissBtn.widthAnchor.constraint(equalToConstant: 75),
             ])
         }
         
@@ -374,22 +381,100 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func dismissPopup() {
+        autoJoinCountdownTimer?.invalidate()
+        autoJoinCountdownTimer = nil
         introPopup?.close()
         introPopup = nil
         currentPopupURL = nil
+        currentPopupStartDate = nil
+        dismissButton = nil
+        autoJoinButton = nil
     }
     
-    @objc func joinEvent() {
-        guard let url = currentPopupURL else { return }
+    @objc func scheduleAutoJoin() {
+        guard let url = currentPopupURL,
+              let startDate = currentPopupStartDate,
+              let autoJoinBtn = autoJoinButton,
+              let dismissBtn = dismissButton else { return }
         
+        // Cancel any existing countdown timer
+        autoJoinCountdownTimer?.invalidate()
+        
+        let now = Date()
+        let delay = startDate.timeIntervalSince(now)
+        
+        if delay <= 0 {
+            // Meeting has already started, join immediately
+            performJoin(url: url)
+            dismissPopup()
+            return
+        }
+        
+        // Disable auto-join button and remove Enter key equivalent
+        autoJoinBtn.isEnabled = false
+        autoJoinBtn.keyEquivalent = ""
+        
+        // Change Dismiss to Cancel
+        dismissBtn.title = "Cancel"
+        dismissBtn.action = #selector(cancelAutoJoin)
+        
+        // Update button with initial countdown
+        updateAutoJoinCountdown()
+        
+        // Start countdown timer that fires every second
+        autoJoinCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateAutoJoinCountdown()
+        }
+    }
+    
+    @objc func cancelAutoJoin() {
+        // Stop the countdown
+        autoJoinCountdownTimer?.invalidate()
+        autoJoinCountdownTimer = nil
+        
+        // Reset buttons to initial state
+        if let autoJoinBtn = autoJoinButton {
+            autoJoinBtn.title = "Auto-join"
+            autoJoinBtn.isEnabled = true
+            autoJoinBtn.keyEquivalent = "\r"
+        }
+        
+        if let dismissBtn = dismissButton {
+            dismissBtn.title = "Dismiss"
+            dismissBtn.action = #selector(dismissPopup)
+        }
+    }
+    
+    func updateAutoJoinCountdown() {
+        guard let url = currentPopupURL,
+              let startDate = currentPopupStartDate,
+              let button = autoJoinButton else { return }
+        
+        let now = Date()
+        let remaining = startDate.timeIntervalSince(now)
+        
+        if remaining <= 0 {
+            // Time to join
+            autoJoinCountdownTimer?.invalidate()
+            autoJoinCountdownTimer = nil
+            performJoin(url: url)
+            dismissPopup()
+            return
+        }
+        
+        // Format as M:SS
+        let minutes = Int(remaining) / 60
+        let seconds = Int(remaining) % 60
+        button.title = String(format: "Auto-joining in %d:%02d", minutes, seconds)
+    }
+    
+    func performJoin(url: URL) {
         // If it's a Zoom URL, convert it to open the Zoom app directly
         if let zoomURL = convertToZoomAppURL(url) {
             NSWorkspace.shared.open(zoomURL)
         } else {
             NSWorkspace.shared.open(url)
         }
-        
-        dismissPopup()
     }
     
     func convertToZoomAppURL(_ url: URL) -> URL? {
@@ -587,7 +672,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         showPopup(
             title: eventTitle,
             message: "\(startTime) - \(endTime)",
-            url: url
+            url: url,
+            startDate: event.startDate
         )
     }
     
