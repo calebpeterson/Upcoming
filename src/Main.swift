@@ -10,8 +10,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var introPopup: NSPanel?
     var currentPopupURL: URL?
     var currentPopupStartDate: Date?
+    var currentPopupEvent: EKEvent?
     var dismissButton: NSButton?
     var autoJoinButton: NSButton?
+    var copyButton: NSButton?
     var autoJoinCountdownTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -165,19 +167,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             title: "Upcoming Event",
             message: "\(eventTitle)\nStarts at \(startTime) (\(minutesUntilStart) minutes)",
             url: eventURL,
-            startDate: event.startDate
+            startDate: event.startDate,
+            event: event
         )
     }
     
-    func showPopup(title: String, message: String, url: URL? = nil, startDate: Date? = nil) {
+    func showPopup(title: String, message: String, url: URL? = nil, startDate: Date? = nil, event: EKEvent? = nil) {
         guard let button = statusItem.button else { return }
         
         // Close any existing popup
         introPopup?.close()
         
-        // Store URL and start date for Auto-join button
+        // Store URL, start date, and event for buttons
         currentPopupURL = url
         currentPopupStartDate = startDate
+        currentPopupEvent = event
         
         // Calculate position below the menubar item
         let buttonFrame = button.window?.convertToScreen(button.frame) ?? .zero
@@ -265,7 +269,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         buttonContainer.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(buttonContainer)
         
-        // Add buttons - Auto-join button if URL exists, otherwise just Dismiss
+        // Add buttons - Copy button (left), Dismiss and Auto-join (right)
+        
+        // Copy button (icon only) - only shown when we have an event
+        if event != nil {
+            let copyBtn = NSButton()
+            copyBtn.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Copy event details")
+            copyBtn.isBordered = false
+            copyBtn.imagePosition = .imageOnly
+            copyBtn.toolTip = "Copy all details to clipboard"
+            copyBtn.target = self
+            copyBtn.action = #selector(copyEventToClipboard)
+            copyBtn.translatesAutoresizingMaskIntoConstraints = false
+            buttonContainer.addSubview(copyBtn)
+            self.copyButton = copyBtn
+        }
+        
         let dismissBtn = NSButton()
         dismissBtn.title = "Dismiss"
         dismissBtn.bezelStyle = .rounded
@@ -322,6 +341,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ])
         
         // Button constraints
+        
+        // Copy button constraints (lower-left)
+        if let copyBtn = self.copyButton {
+            NSLayoutConstraint.activate([
+                copyBtn.leadingAnchor.constraint(equalTo: buttonContainer.leadingAnchor, constant: 12),
+                copyBtn.topAnchor.constraint(equalTo: buttonContainer.topAnchor),
+                copyBtn.bottomAnchor.constraint(equalTo: buttonContainer.bottomAnchor),
+                copyBtn.widthAnchor.constraint(equalToConstant: 32),
+            ])
+        }
+        
         if let autoJoinBtn = self.autoJoinButton {
             NSLayoutConstraint.activate([
                 // Auto-join button - trailing edge (wide enough for countdown text)
@@ -387,8 +417,218 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         introPopup = nil
         currentPopupURL = nil
         currentPopupStartDate = nil
+        currentPopupEvent = nil
         dismissButton = nil
         autoJoinButton = nil
+        copyButton = nil
+    }
+    
+    @objc func copyEventToClipboard() {
+        guard let event = currentPopupEvent else { return }
+        
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime]
+        
+        var eventDict: [String: Any] = [
+            "id": event.eventIdentifier ?? "",
+            "title": event.title ?? "",
+            "startDate": dateFormatter.string(from: event.startDate),
+            "endDate": dateFormatter.string(from: event.endDate),
+            "isAllDay": event.isAllDay,
+        ]
+        
+        // Status
+        let statusString: String
+        switch event.status {
+        case .none: statusString = "none"
+        case .confirmed: statusString = "confirmed"
+        case .tentative: statusString = "tentative"
+        case .canceled: statusString = "canceled"
+        @unknown default: statusString = "unknown"
+        }
+        eventDict["status"] = statusString
+        
+        // Availability
+        let availabilityString: String
+        switch event.availability {
+        case .notSupported: availabilityString = "notSupported"
+        case .busy: availabilityString = "busy"
+        case .free: availabilityString = "free"
+        case .tentative: availabilityString = "tentative"
+        case .unavailable: availabilityString = "unavailable"
+        @unknown default: availabilityString = "unknown"
+        }
+        eventDict["availability"] = availabilityString
+        
+        if let location = event.location, !location.isEmpty {
+            eventDict["location"] = location
+        }
+        
+        // Structured location with coordinates
+        if let structuredLocation = event.structuredLocation {
+            var locDict: [String: Any] = [:]
+            if let title = structuredLocation.title, !title.isEmpty {
+                locDict["title"] = title
+            }
+            if let geoLocation = structuredLocation.geoLocation {
+                locDict["latitude"] = geoLocation.coordinate.latitude
+                locDict["longitude"] = geoLocation.coordinate.longitude
+            }
+            if structuredLocation.radius > 0 {
+                locDict["radius"] = structuredLocation.radius
+            }
+            if !locDict.isEmpty {
+                eventDict["structuredLocation"] = locDict
+            }
+        }
+        
+        if let notes = event.notes, !notes.isEmpty {
+            eventDict["notes"] = notes
+        }
+        
+        if let url = event.url {
+            eventDict["url"] = url.absoluteString
+        }
+        
+        if let timeZone = event.timeZone {
+            eventDict["timeZone"] = timeZone.identifier
+        }
+        
+        if let calendar = event.calendar {
+            var calDict: [String: Any] = [
+                "title": calendar.title,
+            ]
+            let calTypeString: String
+            switch calendar.type {
+            case .local: calTypeString = "local"
+            case .calDAV: calTypeString = "calDAV"
+            case .exchange: calTypeString = "exchange"
+            case .subscription: calTypeString = "subscription"
+            case .birthday: calTypeString = "birthday"
+            @unknown default: calTypeString = "unknown"
+            }
+            calDict["type"] = calTypeString
+            eventDict["calendar"] = calDict
+        }
+        
+        if let organizer = event.organizer {
+            var orgDict: [String: Any] = [:]
+            if let name = organizer.name {
+                orgDict["name"] = name
+            }
+            orgDict["email"] = organizer.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")
+            orgDict["isCurrentUser"] = organizer.isCurrentUser
+            eventDict["organizer"] = orgDict
+        }
+        
+        if let attendees = event.attendees, !attendees.isEmpty {
+            eventDict["attendees"] = attendees.map { attendee in
+                var attendeeDict: [String: Any] = [
+                    "email": attendee.url.absoluteString.replacingOccurrences(of: "mailto:", with: ""),
+                    "isCurrentUser": attendee.isCurrentUser,
+                ]
+                if let name = attendee.name {
+                    attendeeDict["name"] = name
+                }
+                let statusStr: String
+                switch attendee.participantStatus {
+                case .unknown: statusStr = "unknown"
+                case .pending: statusStr = "pending"
+                case .accepted: statusStr = "accepted"
+                case .declined: statusStr = "declined"
+                case .tentative: statusStr = "tentative"
+                case .delegated: statusStr = "delegated"
+                case .completed: statusStr = "completed"
+                case .inProcess: statusStr = "inProcess"
+                @unknown default: statusStr = "unknown"
+                }
+                attendeeDict["status"] = statusStr
+                let roleStr: String
+                switch attendee.participantRole {
+                case .unknown: roleStr = "unknown"
+                case .required: roleStr = "required"
+                case .optional: roleStr = "optional"
+                case .chair: roleStr = "chair"
+                case .nonParticipant: roleStr = "nonParticipant"
+                @unknown default: roleStr = "unknown"
+                }
+                attendeeDict["role"] = roleStr
+                let typeStr: String
+                switch attendee.participantType {
+                case .unknown: typeStr = "unknown"
+                case .person: typeStr = "person"
+                case .room: typeStr = "room"
+                case .resource: typeStr = "resource"
+                case .group: typeStr = "group"
+                @unknown default: typeStr = "unknown"
+                }
+                attendeeDict["type"] = typeStr
+                return attendeeDict
+            }
+        }
+        
+        if event.hasRecurrenceRules, let rules = event.recurrenceRules, !rules.isEmpty {
+            eventDict["recurrenceRules"] = rules.map { rule in
+                var ruleDict: [String: Any] = [:]
+                let freqStr: String
+                switch rule.frequency {
+                case .daily: freqStr = "daily"
+                case .weekly: freqStr = "weekly"
+                case .monthly: freqStr = "monthly"
+                case .yearly: freqStr = "yearly"
+                @unknown default: freqStr = "unknown"
+                }
+                ruleDict["frequency"] = freqStr
+                ruleDict["interval"] = rule.interval
+                if let end = rule.recurrenceEnd {
+                    if let endDate = end.endDate {
+                        ruleDict["endDate"] = dateFormatter.string(from: endDate)
+                    } else if end.occurrenceCount > 0 {
+                        ruleDict["occurrenceCount"] = end.occurrenceCount
+                    }
+                }
+                return ruleDict
+            }
+        }
+        
+        if event.hasAlarms, let alarms = event.alarms, !alarms.isEmpty {
+            eventDict["alarms"] = alarms.map { alarm in
+                var alarmDict: [String: Any] = [:]
+                alarmDict["relativeOffset"] = alarm.relativeOffset
+                if let absoluteDate = alarm.absoluteDate {
+                    alarmDict["absoluteDate"] = dateFormatter.string(from: absoluteDate)
+                }
+                return alarmDict
+            }
+        }
+        
+        if let creationDate = event.creationDate {
+            eventDict["creationDate"] = dateFormatter.string(from: creationDate)
+        }
+        
+        if let lastModifiedDate = event.lastModifiedDate {
+            eventDict["lastModifiedDate"] = dateFormatter.string(from: lastModifiedDate)
+        }
+        
+        eventDict["occurrenceDate"] = dateFormatter.string(from: event.occurrenceDate)
+        
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: eventDict, options: [.prettyPrinted, .sortedKeys])
+            if let jsonString = String(data: jsonData, encoding: .utf8) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(jsonString, forType: .string)
+                
+                // Show "Copied" tooltip temporarily
+                if let btn = copyButton {
+                    btn.toolTip = "Copied"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                        self?.copyButton?.toolTip = "Copy all details to clipboard"
+                    }
+                }
+            }
+        } catch {
+            print("Failed to serialize event to JSON: \(error)")
+        }
     }
     
     @objc func scheduleAutoJoin() {
@@ -673,7 +913,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             title: eventTitle,
             message: "\(startTime) - \(endTime)",
             url: url,
-            startDate: event.startDate
+            startDate: event.startDate,
+            event: event
         )
     }
     
