@@ -1,4 +1,4 @@
-.PHONY: all clean run
+.PHONY: all clean run kill
 
 APP_NAME = Upcoming
 BUILD_DIR = build
@@ -26,4 +26,8 @@ clean:
 run: $(EXECUTABLE)
 	@echo "Launching $(APP_NAME).app..."
 	@open $(APP_BUNDLE)
+
+kill:
+	@killall $(APP_NAME) 2>/dev/null || true
+	@echo "Killed any running $(APP_NAME) instances."
 

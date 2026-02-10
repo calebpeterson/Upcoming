@@ -2,6 +2,15 @@ import Cocoa
 import EventKit
 import ServiceManagement
 
+private final class RoundedBackgroundView: NSView {
+    var cornerRadius: CGFloat = 10
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill()
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     let eventStore = EKEventStore()
@@ -213,23 +222,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create content view
         let contentView = NSView(frame: NSRect(x: 0, y: 0, width: popupWidth, height: initialHeight))
         contentView.wantsLayer = true
-        
-        // Background with proper blur and vibrancy effect
-        let visualEffect = NSVisualEffectView()
-        visualEffect.material = .popover
-        visualEffect.state = .active
-        visualEffect.blendingMode = .behindWindow
-        visualEffect.wantsLayer = true
-        visualEffect.layer?.cornerRadius = 10
-        visualEffect.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(visualEffect)
-        
-        // Add subtle shadow
-        contentView.layer?.shadowColor = NSColor.black.cgColor
-        contentView.layer?.shadowOpacity = 0.15
-        contentView.layer?.shadowOffset = NSSize(width: 0, height: -2)
-        contentView.layer?.shadowRadius = 8
-        
+        contentView.layer?.cornerRadius = 10
+        contentView.layer?.masksToBounds = true
+
+        let backgroundView = RoundedBackgroundView(frame: contentView.bounds)
+        backgroundView.cornerRadius = 10
+        backgroundView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(backgroundView, positioned: .below, relativeTo: nil)
+
         // Title label - allow wrapping
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
@@ -314,12 +314,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up Auto Layout constraints
         NSLayoutConstraint.activate([
-            // Visual effect view fills content view
-            visualEffect.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            visualEffect.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            visualEffect.topAnchor.constraint(equalTo: contentView.topAnchor),
-            visualEffect.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            
+            backgroundView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            backgroundView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            backgroundView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            backgroundView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
             // Title label - top padding, leading/trailing padding
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
@@ -709,11 +708,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func performJoin(url: URL) {
-        // If it's a Zoom URL, convert it to open the Zoom app directly
-        if let zoomURL = convertToZoomAppURL(url) {
-            NSWorkspace.shared.open(zoomURL)
-        } else {
-            NSWorkspace.shared.open(url)
+        let passcodeToCopy: String? = currentPopupEvent.flatMap { event in
+            event.notes.flatMap { extractPasscode(from: $0) }
+        }
+        if let passcode = passcodeToCopy {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.declareTypes([.string], owner: nil)
+            pasteboard.setString(passcode, forType: .string)
+        }
+        let urlToOpen = convertToZoomAppURL(url) ?? url
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            NSWorkspace.shared.open(urlToOpen)
         }
     }
     
@@ -845,6 +851,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
     
+    func extractPasscode(from notes: String) -> String? {
+        let pattern = #"passcode:\s*(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
+        let range = NSRange(location: 0, length: notes.utf16.count)
+        guard let match = regex.firstMatch(in: notes, options: [], range: range),
+              let captureRange = Range(match.range(at: 1), in: notes) else { return nil }
+        return String(notes[captureRange])
+    }
+
     func extractURL(from event: EKEvent) -> URL? {
         var allURLs: [URL] = []
         
