@@ -11,6 +11,8 @@ private final class RoundedBackgroundView: NSView {
     }
 }
 
+private let onlyShowSoloEventsKey = "OnlyShowSoloEvents"
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     let eventStore = EKEventStore()
@@ -24,6 +26,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var autoJoinButton: NSButton?
     var copyButton: NSButton?
     var autoJoinCountdownTimer: Timer?
+
+    var onlyShowSoloEvents: Bool {
+        get { UserDefaults.standard.bool(forKey: onlyShowSoloEventsKey) }
+        set { UserDefaults.standard.set(newValue, forKey: onlyShowSoloEventsKey) }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menubar-only app (no Dock icon)
@@ -74,14 +81,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func refreshData() {
         // Fetch events once and use for both title and menu
         let allEvents = fetchTodayEvents()
-        let regularEvents = filterRegularEvents(allEvents)
+        let filteredEvents = onlyShowSoloEvents
+            ? allEvents.filter { hasNoAdditionalAttendees($0) }
+            : allEvents
+        let regularEvents = filterRegularEvents(filteredEvents)
         
         // Title and notifications only use regular events
         updateStatusItemTitle(with: regularEvents)
         checkForUpcomingEventsAndNotify(events: regularEvents)
         
         // Menu shows all events
-        updateMenu(with: allEvents)
+        updateMenu(with: filteredEvents)
     }
     
     func formatTimeRemaining(minutes: Int) -> String {
@@ -126,7 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             button.title = title
         } else {
-            button.title = " No upcoming events"
+            button.title = ""
         }
     }
     
@@ -838,6 +848,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.state = isLoginItemEnabled() ? .on : .off
         menu.addItem(loginItem)
         
+        let soloEventsItem = NSMenuItem(
+            title: "Only Show Solo Events",
+            action: #selector(toggleOnlyShowSoloEvents(_:)),
+            keyEquivalent: ""
+        )
+        soloEventsItem.target = self
+        soloEventsItem.state = onlyShowSoloEvents ? .on : .off
+        menu.addItem(soloEventsItem)
+        
         menu.addItem(NSMenuItem.separator())
         
         menu.addItem(
@@ -858,6 +877,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let match = regex.firstMatch(in: notes, options: [], range: range),
               let captureRange = Range(match.range(at: 1), in: notes) else { return nil }
         return String(notes[captureRange])
+    }
+
+    func hasNoAdditionalAttendees(_ event: EKEvent) -> Bool {
+        guard let attendees = event.attendees, !attendees.isEmpty else { return true }
+        return attendees.allSatisfy { attendee in
+            attendee.isCurrentUser
+                || attendee.participantType == .room
+                || attendee.participantType == .resource
+        }
     }
 
     func extractURL(from event: EKEvent) -> URL? {
@@ -963,6 +991,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("Failed to toggle login item: \(error.localizedDescription)")
             }
         }
+    }
+    
+    @objc func toggleOnlyShowSoloEvents(_ sender: NSMenuItem) {
+        onlyShowSoloEvents.toggle()
+        refreshData()
     }
     
     func showAccessDeniedMenu() {
