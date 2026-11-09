@@ -115,14 +115,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let startTime = timeFormatter.string(from: event.startDate)
             let now = Date()
             
-            var title = " \(startTime) - \(event.title ?? "Untitled")"
+            var title = " \(startTime) • \(event.title ?? "Untitled")"
             
             // Check if event is in progress
             if now >= event.startDate && now < event.endDate {
                 let remainingSeconds = event.endDate.timeIntervalSince(now)
                 let remainingMinutes = Int(ceil(remainingSeconds / 60.0))
                 let formattedTime = formatTimeRemaining(minutes: remainingMinutes)
-                title += " - \(formattedTime) left"
+                title += " • \(formattedTime) left"
             }
             // Check if event is upcoming within 60 minutes
             else if now < event.startDate {
@@ -130,7 +130,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let minutesUntilStart = Int(ceil(timeUntilStart / 60.0))
                 if minutesUntilStart <= 60 {
                     let formattedTime = formatTimeRemaining(minutes: minutesUntilStart)
-                    title += " - in \(formattedTime)"
+                    title += " • in \(formattedTime)"
                 }
             }
             
